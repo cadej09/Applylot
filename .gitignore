@@ -1,0 +1,27 @@
+.DS_Store
+Thumbs.db
+
+# Per-machine environments (never sync)
+.venv/
+venv/
+node_modules/
+
+# sandbox mount artifacts
+.fuse_hidden*
+
+# Generated tracker outputs
+job_tracker.csv
+job_tracker.xlsx
+
+# Local test / scratch artifacts
+career-ops/jds/test-job.txt
+career-ops/reports/*-unknown-*.md
+
+# Gmail OAuth credentials for send-status-email.py (NEVER commit — live refresh token)
+gmail-send/
+**/gmail-send/
+*credentials.json
+*gcp-oauth.keys.json
+__pycache__/
+logs/
+=

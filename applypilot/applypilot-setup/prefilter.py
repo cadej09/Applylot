@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+"""Hard pre-filter for ApplyPilot — runs BETWEEN discover and score. ZERO API.
+
+Cade's non-negotiables, enforced deterministically so the LLM never wastes a
+credit on a job that can't possibly fit:
+
+  ROLE      title is a data / analytics / analyst family role
+  SENIORITY entry / new-grad / associate / ~2 yrs  (drops senior, lead, staff,
+            principal, manager, director, VP, intern, etc.)
+  LOCATION  Washington State (onsite/hybrid) OR Remote-in-USA. Drops foreign and
+            other-US-state onsite roles.
+
+Non-matches are stamped fit_score = 0 with a PREFILTERED reason. Because the
+scorer only touches jobs WHERE fit_score IS NULL and tailor only touches
+fit_score >= 7, those jobs are skipped for free — but stay visible in the
+tracker so you can see what was dropped and why.
+
+Usage:
+    python3 prefilter.py --dry-run     # preview counts, write nothing
+    python3 prefilter.py               # apply the filter
+    python3 prefilter.py --reset       # undo (clear PREFILTERED marks)
+    python3 prefilter.py --db /path/to/applypilot.db
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import sqlite3
+from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
+
+DB_PATH = Path(os.environ.get("APPLYPILOT_DIR", Path.home() / ".applypilot")) / "applypilot.db"
+
+# ── ROLE: title must contain one of these (case-insensitive substrings) ──────
+ROLE_INCLUDE = (
+    "analyst", "analytics", "data scien", "data engineer", "data engineering",
+    "business intelligence", "machine learning", "statistician", "data science",
+    "bi developer", "bi engineer", "decision scien",
+)
+
+# ── SENIORITY / non-entry: drop if title matches any (word-aware) ────────────
+SENIORITY_EXCLUDE = (
+    r"\bsenior\b", r"\bsr\.?\b", r"\bstaff\b", r"\blead\b", r"\bleader\b",
+    r"\bprincipal\b", r"\bmanager\b", r"\bmgr\b", r"\bdirector\b", r"\bvp\b",
+    r"vice president", r"head of", r"\bchief\b", r"distinguished", r"\bfellow\b",
+    r"architect", r"\biii\b", r"\biv\b", r"\bv\b",
+    # "executive assistant" is an admin role, not an executive one — the old
+    # bare r"executive" false-killed titles like "Business Analyst/Executive
+    # Assistant" (2026-07-18 audit).
+    r"executive(?!\s+assistant)", r"president",
+    r"\bpartner\b", r"\bco-?founder\b", r"\bfounder\b", r"\bfounding\b",
+    r"\bcpto\b", r"\bcto\b", r"\bceo\b", r"\bcoo\b", r"\bcfo\b",
+)
+# Always junk regardless of the internship setting: unpaid/volunteer work,
+# "AI trainer" gig listings (a different job entirely), and foreign-language
+# internship words that only ever appear on non-US postings.
+INTERN_ALWAYS_EXCLUDE = (
+    r"stagiaire", r"stajyer", r"praktik", r"werkstudent",
+    r"\btrainer\b", r"volunteer",
+)
+# Real US internship/entry-pipeline titles. Excluded by default; included when
+# INCLUDE_INTERNSHIPS=1 (user is pursuing a Master's, 2026-07-30). Kept separate
+# from the list above so enabling internships cannot also let gig work back in.
+INTERN_ROLE_TITLES = (
+    r"\bintern\b", r"internship", r"co-?op\b", r"apprentice", r"\btrainee\b",
+)
+INCLUDE_INTERNSHIPS = os.environ.get("INCLUDE_INTERNSHIPS", "0") == "1"
+INTERN_EXCLUDE = (
+    INTERN_ALWAYS_EXCLUDE if INCLUDE_INTERNSHIPS
+    else INTERN_ALWAYS_EXCLUDE + INTERN_ROLE_TITLES
+)
+
+# ── LOCATION ─────────────────────────────────────────────────────────────────
+REMOTE_HINTS = ("remote", "anywhere", "work from home", "wfh", "distributed", "virtual")
+FOREIGN_HINTS = (
+    "india", "canada", "united kingdom", " uk", "london", "philippines", "brazil",
+    "türkiye", "turkey", "singapore", "australia", "germany", "france", "poland",
+    "mexico", "ireland", "malaysia", "south africa", "guyana", "denmark",
+    "netherlands", "bulgaria", "romania", "spain", "portugal", "italy", "japan",
+    "china", "hong kong", "korea", "indonesia", "vietnam", "pakistan", "nigeria",
+    "egypt", "peru", "colombia", "chile", "argentina", "malta", "cyprus", "guatemala",
+)
+WA_HINTS = (
+    "seattle", "bellevue", "redmond", "kirkland", "bothell", "renton", "tacoma",
+    "everett", "Seattle", "puget", "olympia", "spokane", "vancouver, wa",
+)
+# Tier-2 relocation metros (2026-07-18): pass the prefilter so they get SCORED;
+# fix-gates enforces the 8+ apply bar for them post-score.
+METRO_HINTS = (
+    "san francisco", "san jose", "oakland", "palo alto", "mountain view",
+    "sunnyvale", "santa clara", "san diego", "los angeles", "santa monica",
+    "irvine", "new york", "nyc", "manhattan", "brooklyn", "jersey city",
+    "chicago", "boston", "cambridge, ma", "somerville",
+)
+DC_MARKERS = ("washington, dc", "washington dc", "washington, d.c", "d.c.", "district of columbia")
+_WA_TOKEN = re.compile(r"\bwa\b|\bwashington\b", re.I)
+
+
+def title_reasons(title: str) -> list[str]:
+    """Return list of failure reasons for a title (empty = passes)."""
+    t = (title or "").lower()
+    reasons = []
+    if not any(k in t for k in ROLE_INCLUDE):
+        reasons.append("role-mismatch")
+    if any(re.search(p, t) for p in SENIORITY_EXCLUDE):
+        reasons.append("too-senior")
+    if any(re.search(p, t) for p in INTERN_EXCLUDE):
+        reasons.append("intern/gig")
+    return reasons
+
+
+def location_reason(loc: str | None) -> str | None:
+    """Return a failure reason for a location, or None if it passes."""
+    if not loc or not loc.strip():
+        return None  # unknown -> keep, let scorer/you decide
+    l = loc.lower()
+    if any(f in l for f in FOREIGN_HINTS):
+        return "foreign"
+    if any(r in l for r in REMOTE_HINTS):
+        return None  # US remote (foreign already excluded)
+    is_dc = any(m in l for m in DC_MARKERS)
+    if _WA_TOKEN.search(l) and not is_dc:
+        return None  # WA onsite/hybrid
+    if any(w in l for w in WA_HINTS):
+        return None
+    if any(m in l for m in METRO_HINTS):
+        return None  # tier-2 metro: keep for scoring; 8+ bar enforced post-score
+    return "not-WA/metro/remote"  # other US state onsite, or ambiguous non-remote US
+
+
+def evaluate(title: str, loc: str | None) -> list[str]:
+    reasons = title_reasons(title)
+    lr = location_reason(loc)
+    if lr:
+        reasons.append(lr)
+    return reasons
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--db", default=str(DB_PATH))
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--reset", action="store_true")
+    args = ap.parse_args()
+
+    db = Path(args.db)
+    if not db.exists():
+        raise SystemExit(f"DB not found: {db}\nRun discovery first: applypilot run discover -w 4")
+
+    conn = sqlite3.connect(str(db))
+    conn.row_factory = sqlite3.Row
+
+    if args.reset:
+        n = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE score_reasoning LIKE 'PREFILTERED%'"
+        ).fetchone()[0]
+        conn.execute(
+            "UPDATE jobs SET fit_score = NULL, score_reasoning = NULL, scored_at = NULL "
+            "WHERE score_reasoning LIKE 'PREFILTERED%'"
+        )
+        conn.commit()
+        print(f"Reset {n} prefiltered jobs back to unscored.")
+        return
+
+    # Only consider jobs not yet scored by the LLM (fit_score IS NULL) OR already
+    # prefiltered (so re-running updates cleanly). Never overwrite real LLM scores.
+    rows = conn.execute(
+        "SELECT url, title, location FROM jobs "
+        "WHERE fit_score IS NULL OR score_reasoning LIKE 'PREFILTERED%'"
+    ).fetchall()
+
+    kept, dropped = [], []
+    reason_counts: Counter = Counter()
+    for r in rows:
+        reasons = evaluate(r["title"] or "", r["location"])
+        if reasons:
+            dropped.append((r["url"], reasons))
+            for x in reasons:
+                reason_counts[x] += 1
+        else:
+            kept.append(r)
+
+    total = len(rows)
+    print("\n" + "=" * 64)
+    print(f"  PRE-FILTER  ({'DRY RUN — no writes' if args.dry_run else 'applying'})")
+    print(f"  candidates considered: {total}")
+    print("=" * 64)
+    print(f"  KEEP  (go to scorer): {len(kept)}")
+    print(f"  DROP  (skip, free):   {len(dropped)}")
+    print("\n  drop reasons (a job can have several):")
+    for reason, cnt in reason_counts.most_common():
+        print(f"    {reason:16} {cnt}")
+    print("\n  sample kept roles:")
+    for r in kept[:15]:
+        print(f"    + {(r['title'] or '')[:46]:46} | {(r['location'] or '')[:22]}")
+
+    if args.dry_run:
+        print("\n(dry run) re-run without --dry-run to apply.\n")
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+    for url, reasons in dropped:
+        conn.execute(
+            "UPDATE jobs SET fit_score = 0, score_reasoning = ?, scored_at = ? WHERE url = ?",
+            (f"PREFILTERED: {', '.join(reasons)}", now, url),
+        )
+    conn.commit()
+    print(f"\nApplied. {len(dropped)} jobs marked (fit_score=0) and will be skipped by the")
+    print(f"scorer/tailor. {len(kept)} jobs remain for LLM scoring.\n")
+    print("Next (spends API, only on the survivors):")
+    print("  caffeinate -i applypilot run score tailor cover pdf -w 4\n")
+
+
+if __name__ == "__main__":
+    main()

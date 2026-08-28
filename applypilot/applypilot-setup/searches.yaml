@@ -1,0 +1,147 @@
+# ApplyPilot search configuration for Jane Doe
+# Tailored to a data / analytics profile, Greater Seattle Area (onsite/hybrid)
+# plus fully-remote roles anywhere in the US.
+
+# Search queries -- each has a query string and priority tier.
+# Tier 1: high-priority exact matches (searched first, highest precision)
+# Tier 2: strong matches, broader scope
+# Tier 3: wide net, higher volume, lower precision
+queries:
+  - query: "data analyst"
+    tier: 1
+  - query: "business intelligence analyst"
+    tier: 1
+  - query: "analytics associate"
+    tier: 1
+  - query: "product analyst"
+    tier: 1
+  - query: "data scientist"
+    tier: 2
+  - query: "data analytics"
+    tier: 2
+  - query: "business analyst"
+    tier: 2
+  - query: "reporting analyst"
+    tier: 2
+  - query: "BI developer"
+    tier: 2
+  - query: "marketing analyst"
+    tier: 2
+  - query: "operations analyst"
+    tier: 2
+  - query: "data engineer"
+    tier: 2
+  - query: "analytics engineer"
+    tier: 2
+  - query: "quantitative analyst"
+    tier: 3
+  - query: "research analyst"
+    tier: 3
+  - query: "insights analyst"
+    tier: 3
+  - query: "machine learning engineer"
+    tier: 3
+  - query: "cybersecurity data analyst"
+    tier: 3
+  - query: "junior data scientist"
+    tier: 3
+  - query: "associate data analyst"
+    tier: 3
+
+# Locations to search
+locations:
+  - location: "Seattle, WA"
+    remote: false
+  - location: "Bellevue, WA"
+    remote: false
+  - location: "Redmond, WA"
+    remote: false
+  - location: "Remote"
+    remote: true
+
+# Location filtering -- accept/reject patterns for job location text
+location:
+  accept_patterns:
+    - "Seattle"
+    - "Bellevue"
+    - "Redmond"
+    - "Kirkland"
+    - "Bothell"
+    - "Renton"
+    - "Greater Seattle"
+    - "Puget Sound"
+    - "Washington"
+    - "WA"
+    - "Remote"
+    - "Anywhere"
+    - "United States"
+    - "US"
+    - "USA"
+  reject_patterns:
+    - "New York only"
+    - "onsite only"
+    - "Canada"
+    - "United Kingdom"
+    - "London"
+    - "India"
+    - "Philippines"
+    - "Europe"
+    - "remote in"   # filters "remote in <other country>"
+
+# Country for Indeed/LinkedIn/Google Jobs searches
+country: "USA"
+
+# JobSpy source boards.
+# NOTE: the discovery code reads the key "sites" (NOT "boards" — that key is ignored).
+# indeed + linkedin = reliable scrapers. google = meta-aggregator that surfaces
+# postings from hundreds of company ATS sites, many with DIRECT apply URLs
+# (i.e. auto-appliable). zip_recruiter/glassdoor are dropped (403 / rate-limit spam).
+# The full `discover` stage ALSO scrapes 48 Workday portals + 30 direct career
+# sites automatically — those are the best source of hands-free auto-apply jobs.
+sites:
+  - indeed
+  - linkedin
+  - google
+
+# Search defaults
+defaults:
+  results_per_site: 40    # Max results per board per query (boards sort by
+                          # relevance, so the top 40 hold the real matches;
+                          # 100 just dragged in long-tail junk to enrich+score)
+  hours_old: 72           # Only jobs posted within this many hours
+
+# Negative keywords -- skip jobs with these in the title (case-insensitive)
+exclude_titles:
+  - "senior"
+  - "sr."
+  - "staff"
+  - "lead"
+  - "principal"
+  - "manager"
+  - "director"
+  - "VP "
+  - "vice president"
+  - "chief"
+  - "head of"
+  - "intern"
+  - "internship"
+  - "co-op"
+  - "clearance required"
+  - "active clearance"
+  - "TS/SCI"
+  - "secret clearance"
+  # Data-labeling / gig content-mill families (mass-posted, not real analyst jobs)
+  - "annotator"
+  - "annotation"
+  - "content evaluator"
+  - "content reviewer"
+  - "ai trainer"
+  - "ai tutor"
+  - "tutor"
+  - "rater"
+  - "search evaluator"
+  - "transcriber"
+  - "transcription"
+  - "data entry"
+  - "survey taker"
+  - "freelance"

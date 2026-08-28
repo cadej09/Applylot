@@ -1,0 +1,171 @@
+# Workday employer registry for ApplyPilot
+# US-focused list (Seattle/WA + nationwide employers with heavy analyst/data
+# hiring). Every endpoint below was verified live against the Workday CXS API.
+#
+# Add your own: find the URL at https://[company].wd[N].myworkdayjobs.com,
+# then read tenant + site_id from the path /wday/cxs/<tenant>/<site_id>/jobs.
+# (The Canadian default list is preserved in employers.yaml.canadian.bak.)
+
+employers:
+
+  # ── Seattle / Pacific Northwest ─────────────────────────────────────────
+
+  tmobile:
+    name: "T-Mobile"
+    tenant: "tmobile"
+    site_id: "External"
+    base_url: "https://tmobile.wd1.myworkdayjobs.com"
+
+  nordstrom:
+    name: "Nordstrom"
+    tenant: "nordstrom"
+    site_id: "nordstrom_careers"
+    base_url: "https://nordstrom.wd501.myworkdayjobs.com"
+
+  boeing:
+    name: "Boeing"
+    tenant: "boeing"
+    site_id: "EXTERNAL_CAREERS"
+    base_url: "https://boeing.wd1.myworkdayjobs.com"
+
+  # ── Big Tech (US) ───────────────────────────────────────────────────────
+
+  salesforce:
+    name: "Salesforce"
+    tenant: "salesforce"
+    site_id: "External_Career_Site"
+    base_url: "https://salesforce.wd12.myworkdayjobs.com"
+
+  nvidia:
+    name: "NVIDIA"
+    tenant: "nvidia"
+    site_id: "NVIDIAExternalCareerSite"
+    base_url: "https://nvidia.wd5.myworkdayjobs.com"
+
+  adobe:
+    name: "Adobe"
+    tenant: "adobe"
+    site_id: "external_experienced"
+    base_url: "https://adobe.wd5.myworkdayjobs.com"
+
+  cisco:
+    name: "Cisco"
+    tenant: "cisco"
+    site_id: "Cisco_Careers"
+    base_url: "https://cisco.wd5.myworkdayjobs.com"
+
+  intel:
+    name: "Intel"
+    tenant: "intel"
+    site_id: "External"
+    base_url: "https://intel.wd1.myworkdayjobs.com"
+
+  workday:
+    name: "Workday"
+    tenant: "workday"
+    site_id: "Workday"
+    base_url: "https://workday.wd5.myworkdayjobs.com"
+
+  autodesk:
+    name: "Autodesk"
+    tenant: "autodesk"
+    site_id: "Ext"
+    base_url: "https://autodesk.wd1.myworkdayjobs.com"
+
+  dell:
+    name: "Dell"
+    tenant: "dell"
+    site_id: "External"
+    base_url: "https://dell.wd1.myworkdayjobs.com"
+
+  motorola:
+    name: "Motorola Solutions"
+    tenant: "motorolasolutions"
+    site_id: "Careers"
+    base_url: "https://motorolasolutions.wd5.myworkdayjobs.com"
+
+  comcast:
+    name: "Comcast"
+    tenant: "comcast"
+    site_id: "Comcast_Careers"
+    base_url: "https://comcast.wd5.myworkdayjobs.com"
+
+  # ── Finance / Insurance (US, analyst-heavy) ─────────────────────────────
+
+  mastercard:
+    name: "Mastercard"
+    tenant: "mastercard"
+    site_id: "CorporateCareers"
+    base_url: "https://mastercard.wd1.myworkdayjobs.com"
+
+  paypal:
+    name: "PayPal"
+    tenant: "paypal"
+    site_id: "jobs"
+    base_url: "https://paypal.wd1.myworkdayjobs.com"
+
+  fis:
+    name: "FIS Global"
+    tenant: "fis"
+    site_id: "SearchJobs"
+    base_url: "https://fis.wd5.myworkdayjobs.com"
+
+  bankofamerica:
+    name: "Bank of America"
+    tenant: "ghr"
+    site_id: "Lateral-US"
+    base_url: "https://ghr.wd1.myworkdayjobs.com"
+
+  geico:
+    name: "GEICO"
+    tenant: "geico"
+    site_id: "External"
+    base_url: "https://geico.wd1.myworkdayjobs.com"
+
+  # ── Healthcare (US, remote-friendly) ────────────────────────────────────
+
+  cvshealth:
+    name: "CVS Health"
+    tenant: "cvshealth"
+    site_id: "cvs_health_careers"
+    base_url: "https://cvshealth.wd1.myworkdayjobs.com"
+
+  humana:
+    name: "Humana"
+    tenant: "humana"
+    site_id: "Humana_External_Career_Site"
+    base_url: "https://humana.wd5.myworkdayjobs.com"
+
+  moderna:
+    name: "Moderna"
+    tenant: "modernatx"
+    site_id: "M_tx"
+    base_url: "https://modernatx.wd1.myworkdayjobs.com"
+
+  # ── Retail / Consumer / Industrial (US) ─────────────────────────────────
+
+  target:
+    name: "Target"
+    tenant: "target"
+    site_id: "targetcareers"
+    base_url: "https://target.wd5.myworkdayjobs.com"
+
+  threem:
+    name: "3M"
+    tenant: "3m"
+    site_id: "Search"
+    base_url: "https://3m.wd1.myworkdayjobs.com"
+
+  gm:
+    name: "General Motors"
+    tenant: "generalmotors"
+    site_id: "Careers_GM"
+    base_url: "https://generalmotors.wd5.myworkdayjobs.com"
+
+  # ── Media / Data ────────────────────────────────────────────────────────
+
+  thomson_reuters:
+    name: "Thomson Reuters"
+    tenant: "thomsonreuters"
+    site_id: "External_Career_Site"
+    base_url: "https://thomsonreuters.wd5.myworkdayjobs.com"
