@@ -579,6 +579,12 @@ def _fallback_providers(primary_url: str) -> list[tuple[str, str, str]]:
             groq_key,
         ))
 
+    # Index where the paid tier begins. Everything from here down burns real
+    # balance, and FallbackLLM refuses to LATCH onto these (2026-09-02): a
+    # transient 402 from Cerebras once promoted Kimi "for the rest of this run"
+    # and sent ~400 scoring calls to prepaid credit while NIM was healthy.
+    _paid_from = len(provs)
+
     # ══ PAID-CREDIT TIER (user rule 2026-07-27: "use the paid credits only
     # when needed") ══════════════════════════════════════════════════════════
     # Everything ABOVE this line costs nothing per call:
@@ -668,7 +674,11 @@ def _fallback_providers(primary_url: str) -> list[tuple[str, str, str]]:
             ))
 
     primary_root = primary_url.rstrip("/")
-    return [p for p in provs if p[0].rstrip("/") != primary_root]
+    # Emit (url, model, key, is_paid). The flag survives the primary-dedup
+    # filter below, which can shift indices, so it is attached per-entry rather
+    # than returned as a boundary index.
+    tagged = [(u, m, k, i >= _paid_from) for i, (u, m, k) in enumerate(provs)]
+    return [p for p in tagged if p[0].rstrip("/") != primary_root]
 
 
 class FallbackLLM:
@@ -686,16 +696,40 @@ class FallbackLLM:
         self.model = primary.model
         self.base_url = primary.base_url
 
+    # A reasoning model occasionally emits prose instead of JSON without being
+    # broken. Demoting on the FIRST garble exiled healthy NIM after 8 requests
+    # on 2026-09-02 and pushed the whole run down the chain to paid credit.
+    # Give a provider this many garbles before writing it off for the run.
+    # Set to 2, not 3, because scorer.score_job retries each job only 3 times:
+    # at 2 strikes the 2nd garble demotes and the 3rd attempt lands on the next
+    # provider, so the JOB still gets scored. At 3 the demotion coincides with
+    # the last retry and the job is left unscored.
+    _GARBLE_STRIKES = 2
+
     def demote_current(self, why: str = "unusable output") -> bool:
-        """Skip the currently-promoted provider for the rest of the run.
+        """Demote the current provider once it has garbled enough times.
 
         For providers that answer HTTP 200 with GARBAGE (e.g. OpenRouter's
         nemotron replying to a scoring prompt with resume-tailoring prose).
         Exception-based failover can't catch those — the call "succeeded" — so
-        the caller detects the bad output and calls this to move down the chain.
+        the caller detects the bad output and calls this.
 
-        Returns True if another provider is available, False if this was the last.
+        Returns True if the caller should retry (same provider while it still
+        has strikes left, the next one after a real demotion), False when the
+        chain is exhausted.
         """
+        strikes = getattr(self, "_strikes", {})
+        strikes[self._start] = strikes.get(self._start, 0) + 1
+        self._strikes = strikes
+        if strikes[self._start] < self._GARBLE_STRIKES:
+            cur = self._chain[self._start]
+            log.warning(
+                "LLM provider %s (%s) returned unusable output (%s) — strike "
+                "%d/%d, retrying same provider.",
+                cur.base_url, cur.model, why,
+                strikes[self._start], self._GARBLE_STRIKES,
+            )
+            return True
         if self._start + 1 >= len(self._chain):
             log.error("Cannot demote %s (%s): no providers left in the chain.",
                       self.base_url, why)
@@ -716,13 +750,40 @@ class FallbackLLM:
             try:
                 result = client.chat(messages, **kwargs)
                 if i != self._start:
-                    # This provider works and earlier ones are dead: promote it
-                    # so subsequent calls skip the corpses.
-                    log.warning(
-                        "LLM fallback promoted: now using %s (%s) for the rest "
-                        "of this run.", client.base_url, client.model,
-                    )
-                    self._start = i
+                    # `is_paid` really means "below the free tier — do not
+                    # latch". Local Ollama is free but sits down there as a last
+                    # resort (and is banned from scoring), so it gets the same
+                    # no-latch treatment; the log wording just avoids calling
+                    # localhost "paid".
+                    _below_free = getattr(client, "is_paid", False)
+                    _local = "localhost" in client.base_url or "127.0.0.1" in client.base_url
+                    if _below_free and not _local:
+                        # PAID provider: serve this ONE request, but never latch
+                        # (2026-09-02). Latching here sent ~400 scoring calls to
+                        # prepaid Kimi credit after a single transient Cerebras
+                        # 402, while NIM upstream was healthy the whole time.
+                        # Leaving _start alone means the next call retries the
+                        # free chain from the top and only pays again if the
+                        # free tier is genuinely still down.
+                        log.warning(
+                            "LLM fell back to PAID provider %s (%s) for one "
+                            "request; not promoting — free chain retried next "
+                            "call.", client.base_url, client.model,
+                        )
+                    elif _below_free:
+                        # Local: free, but still a last resort — don't latch.
+                        log.warning(
+                            "LLM fell back to local %s (%s) for one request; "
+                            "not promoting.", client.base_url, client.model,
+                        )
+                    else:
+                        # This provider works and earlier ones are dead: promote
+                        # it so subsequent calls skip the corpses.
+                        log.warning(
+                            "LLM fallback promoted: now using %s (%s) for the "
+                            "rest of this run.", client.base_url, client.model,
+                        )
+                        self._start = i
                 self.model = client.model
                 self.base_url = client.base_url
                 return result
@@ -761,9 +822,11 @@ def get_client() -> FallbackLLM:
     global _instance
     if _instance is None:
         base_url, model, api_key = _detect_provider()
-        fallbacks = [
-            LLMClient(u, m, k) for u, m, k in _fallback_providers(base_url)
-        ]
+        fallbacks = []
+        for u, m, k, is_paid in _fallback_providers(base_url):
+            _c = LLMClient(u, m, k)
+            _c.is_paid = is_paid       # consulted by FallbackLLM.chat
+            fallbacks.append(_c)
         chain_desc = " -> ".join(
             [f"{model}@{base_url}"] + [f"{c.model}@{c.base_url}" for c in fallbacks]
         )

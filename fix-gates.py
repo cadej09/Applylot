@@ -101,25 +101,27 @@ from applypilot.scoring.scorer import (
     _DOMAIN_MISMATCH_RX, _SENIOR_TITLE_RX, _TARGET_FAMILY_RX,
     _SWE_RX, _SWE_EXEMPT_RX, _LANE_CORE_RX, _LANE_OFF_RX, is_internship)
 
-# ── 1a2. Internships: score them, but never auto-apply ───────────────────
-# User is pursuing a Master's but is not yet admitted, so he is not currently
-# enrolled — which most internships require. Park them as 'deferred' (a status
-# the tailor and apply queues already skip) so they stay visible and scored for
-# human review instead of burning applications on an eligibility screen the bot
-# would have to answer honestly and fail. `internship-report.py` lists them.
-n_intern = 0
-for r in c.execute(
-    "SELECT url, title FROM jobs WHERE fit_score >= 6 "
-    "AND COALESCE(apply_status,'') NOT IN ('applied','in_progress','deferred')"
-).fetchall():
-    if is_internship(r["title"] or ""):
-        c.execute(
-            "UPDATE jobs SET apply_status='deferred', "
-            "apply_error='internship — needs enrollment check, review manually' "
-            "WHERE url=?", (r["url"],))
-        n_intern += 1
-if n_intern:
-    print(f"  internships parked for review (not auto-applied): {n_intern}")
+# ── 1a2. Internships ──────────────────────────────────────────────────────
+# 2026-08-28: internships are now AUTO-APPLIED like any other role.
+#
+# They were parked as 'deferred' because admission was pending, so he was not
+# enrolled anywhere and the bot would have had to answer an enrollment screen
+# honestly and fail. He has since been admitted to the University of
+# Pennsylvania M.S.E. in Artificial Intelligence (starts Dec 2026, completes
+# Summer 2028), and his stated goal is employment or an internship DURING the
+# master's — so for the Summer 2027 cycle now opening, he will be enrolled for
+# the whole internship period. The eligibility objection no longer holds.
+#
+# Previously-deferred rows are released here; nothing else in the pipeline
+# distinguishes internships any more. Re-park them by restoring this block if
+# the enrollment situation changes.
+n_release = c.execute(
+    "UPDATE jobs SET apply_status=NULL, apply_error=NULL "
+    "WHERE apply_status='deferred' "
+    "AND COALESCE(apply_error,'') LIKE 'internship%'"
+).rowcount
+if n_release:
+    print(f"  internships released for auto-apply (user enrolled): {n_release}")
 
 n_title = 0
 for r in c.execute("SELECT url, title FROM jobs WHERE fit_score >= 6 "

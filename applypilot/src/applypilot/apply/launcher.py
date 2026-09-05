@@ -219,19 +219,26 @@ def acquire_job(target_url: str | None = None, min_score: int = 6,
                   --   Aggregator rows with unknown employer (linkedin/indeed/
                   --   google, no company) stay exempt; heal-db backfills
                   --   `company` for the big employers so they can't hide there.
+                  -- Per-company weekly throttle (user 2026-09-02): at most 3
+                  -- applications per company per 7 days, and score 7+ is exempt
+                  -- entirely — "if multiple 7s, then all should be applied
+                  -- since our scoring also changed so that 7 is a strong
+                  -- enough fit".
+                  --
+                  -- The previous form exempted only 8+ and, below that, blocked
+                  -- a company after a SINGLE application in the window (the
+                  -- second NOT IN had no COUNT threshold). That was stricter
+                  -- than the documented "3 per company per week" and shrank a
+                  -- 41-job queue to 1 after a good cycle: every employer just
+                  -- applied to locked out all its other 6s and 7s for a week.
                   AND (COALESCE(company, site) IN ('linkedin', 'indeed', 'google')
-                       OR fit_score >= 8
-                       OR (COALESCE(company, site) NOT IN (
+                       OR fit_score >= 7
+                       OR COALESCE(company, site) NOT IN (
                                SELECT COALESCE(company, site) FROM jobs
                                WHERE apply_status = 'applied'
                                  AND applied_at > datetime('now', '-7 days')
                                GROUP BY COALESCE(company, site)
-                               HAVING COUNT(*) >= 3)
-                           AND (fit_score >= 8
-                                OR COALESCE(company, site) NOT IN (
-                                    SELECT COALESCE(company, site) FROM jobs
-                                    WHERE apply_status = 'applied'
-                                      AND applied_at > datetime('now', '-7 days')))))
+                               HAVING COUNT(*) >= 3))
                   AND fit_score >= ?
                   {site_clause}
                   {url_clauses}

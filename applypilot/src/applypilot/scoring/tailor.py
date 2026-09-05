@@ -81,6 +81,16 @@ def _build_tailor_prompt(profile: dict) -> str:
 
     education = profile.get("experience", {})
     education_level = education.get("education_level", "")
+    # `experience.education_level` is what he HOLDS (Bachelor's) and it also
+    # feeds scorer._candidate_facts()/has_grad_degree, which decides whether
+    # postings hard-requiring a completed graduate degree are reachable — so it
+    # must NOT be rewritten to advertise an in-progress degree. When
+    # resume_facts supplies a dedicated resume line (UPenn M.S.E. in AI,
+    # starting Dec 2026), prefer it for the RESUME only, and carry the finished
+    # B.S. through as a detail line so the completed degree is never dropped.
+    # (user 2026-08-28)
+    education_level = resume_facts.get("resume_degree_line") or education_level
+    prior_education_line = resume_facts.get("prior_education_line", "")
 
     # Certifications are injected by code in assemble_resume_text (their own
     # education bullet), never here in the LLM output — keeps them out of the
@@ -116,6 +126,7 @@ EXPERIENCE: Include EVERY role from the base resume held at the preserved compan
 PROJECTS: Pick the 2-3 projects MOST relevant to the posting, most relevant first. The base resume's project list is a menu — choose the ones whose tools and domain mirror the job.
 
 EDUCATION: "line" = school + degree + graduation date ONLY (from the base resume; do NOT put certificates on this line — they are added separately by the system). "details" = 2-3 short lines pulled ONLY from the base resume's education section: one combining GPA + honors (e.g. Dean's List), and one "Relevant coursework:" line listing the 5-8 base-resume courses most relevant to THIS posting. Include the spoken-languages line only when the posting values it. Do NOT add a certificates line yourself.
+PRIOR DEGREE: when a prior-degree line is given below, it MUST be reproduced VERBATIM as the FIRST entry of "details". It is a completed degree and may never be dropped, reworded, merged into the "line", or presented as in progress. The graduate program on the "line" is IN PROGRESS — never describe it as completed, conferred, earned, or awarded, and never claim experience derived from it.
 
 BULLETS (X-Y-Z formula): what was accomplished + the number that proves it + how. "Cut onboarding time 30% by redesigning the training plan" beats "responsible for onboarding". Lead with the result. Where there is no real number, show scope instead (how many people, rows, systems). Never write "as measured by". Vary verbs (Built, Designed, Implemented, Reduced, Automated, Deployed, Operated, Optimized). Order bullets strongest-match-first. Max 4 per section.
 
@@ -144,6 +155,7 @@ FILL THE PAGE (one page exactly — overflowing shrinks the PDF font, but a half
 - Every metric stays under the company/role where it actually happened (the [brackets] above). NEVER move a real number to a different employer's bullets.
 - Preserved companies: {companies_str} -- names stay as-is
 - Preserved school: {school}
+- Prior degree line (reproduce VERBATIM as the first "details" entry; omit only if blank): {prior_education_line}
 - Must fit 1 page.{honesty_block}
 
 ## OUTPUT: Return ONLY valid JSON. No markdown fences. No commentary. No "here is" preamble.

@@ -38,6 +38,18 @@ ROLE_INCLUDE = (
     "analyst", "analytics", "data scien", "data engineer", "data engineering",
     "business intelligence", "machine learning", "statistician", "data science",
     "bi developer", "bi engineer", "decision scien",
+    # AI/ML vocabulary — user 2026-08-28, admitted to a UPenn MSE in AI starting
+    # Dec 2026, so AI/ML roles moved on-lane. Without these, real matches like
+    # "AI Software Engineer Graduate Intern" (Intel) and "Applied Research
+    # Intern (NLP/ML/GenAI)" (Thomson Reuters) were stamped role-mismatch by the
+    # prefilter and never reached the scorer at all.
+    # Matched as SUBSTRINGS (`k in title`), never as regex — a bare "ai " would
+    # also match Dubai/Chennai/Mumbai, hence the padded/punctuated forms.
+    "artificial intelligence", " ai ", "ai/", "/ai", "ai engineer",
+    " ml ", "ml engineer", "ml/", "applied scien", "research scien",
+    "deep learning", "mlops", "nlp", "natural language", "computer vision",
+    "llm", "generative ai", "data quality", "data governance", "database",
+    "reporting", "quantitative",
 )
 
 # ── SENIORITY / non-entry: drop if title matches any (word-aware) ────────────
@@ -98,12 +110,61 @@ DC_MARKERS = ("washington, dc", "washington dc", "washington, d.c", "d.c.", "dis
 _WA_TOKEN = re.compile(r"\bwa\b|\bwashington\b", re.I)
 
 
-def title_reasons(title: str) -> list[str]:
-    """Return list of failure reasons for a title (empty = passes)."""
+# Description signals, consulted only to RESCUE a title ROLE_INCLUDE missed.
+# User 2026-08-28: "not too much like title based but also job description and
+# looking at like matches that way."
+#
+# Split into CORE (what the job IS) and TOOL (what it uses) on purpose. A first
+# cut accepted any two signals of either kind and passed 42% of all rows —
+# nearly every software posting names SQL and Python, so tooling alone proves
+# nothing. A role is rescued only on real role evidence.
+_CORE_SIGNALS = (
+    r"\bdata analy", r"\banalytics\b", r"\bbusiness intelligence\b",
+    r"\bdata scien", r"\bdata engineer", r"\bdata pipeline",
+    r"\bdata warehouse", r"\bdata model", r"\bdata quality\b",
+    r"\bdata governance\b", r"\bmachine learning\b", r"\bdeep learning\b",
+    r"\bartificial intelligence\b", r"\bnatural language processing\b",
+    r"\bcomputer vision\b", r"\bstatistical analysis\b", r"\bdashboards?\b",
+    r"\bA/B test", r"\bexperimentation\b", r"\bforecasting\b",
+    r"\bpredictive model", r"\bapplied scien", r"\bbusiness intelligence\b",
+)
+_TOOL_SIGNALS = (
+    r"\bsql\b", r"\bpython\b", r"\btableau\b", r"\bpower ?bi\b", r"\blooker\b",
+    r"\bdbt\b", r"\bsnowflake\b", r"\bredshift\b", r"\bbigquery\b", r"\betl\b",
+    r"\bpytorch\b", r"\btensorflow\b", r"\bscikit\b", r"\bpandas\b",
+    r"\bspark\b", r"\bairflow\b", r"\bregression\b",
+)
+_CORE_RX = [re.compile(p, re.I) for p in _CORE_SIGNALS]
+_TOOL_RX = [re.compile(p, re.I) for p in _TOOL_SIGNALS]
+
+
+def description_matches_role(description: str | None) -> bool:
+    """True when a description describes data/AI WORK, not merely data/AI tools.
+
+    Two distinct CORE phrases, or one CORE phrase backed by a tool from the
+    stack. Note this can only help where a description actually exists —
+    prune-db stubs descriptions for scored-low rows, so on historical rows the
+    field is usually empty and the title remains the only evidence.
+    """
+    if not description:
+        return False
+    core = {rx.pattern for rx in _CORE_RX if rx.search(description)}
+    if len(core) >= 2:
+        return True
+    return bool(core) and any(rx.search(description) for rx in _TOOL_RX)
+
+
+def title_reasons(title: str, description: str | None = None) -> list[str]:
+    """Return list of failure reasons for a title (empty = passes).
+
+    `description` is consulted only to rescue a title that missed ROLE_INCLUDE.
+    It can never ADD a reason, so the seniority and gig gates are unaffected.
+    """
     t = (title or "").lower()
     reasons = []
     if not any(k in t for k in ROLE_INCLUDE):
-        reasons.append("role-mismatch")
+        if not description_matches_role(description):
+            reasons.append("role-mismatch")
     if any(re.search(p, t) for p in SENIORITY_EXCLUDE):
         reasons.append("too-senior")
     if any(re.search(p, t) for p in INTERN_EXCLUDE):
@@ -130,8 +191,8 @@ def location_reason(loc: str | None) -> str | None:
     return "not-WA/metro/remote"  # other US state onsite, or ambiguous non-remote US
 
 
-def evaluate(title: str, loc: str | None) -> list[str]:
-    reasons = title_reasons(title)
+def evaluate(title: str, loc: str | None, description: str | None = None) -> list[str]:
+    reasons = title_reasons(title, description)
     lr = location_reason(loc)
     if lr:
         reasons.append(lr)
@@ -167,14 +228,14 @@ def main() -> None:
     # Only consider jobs not yet scored by the LLM (fit_score IS NULL) OR already
     # prefiltered (so re-running updates cleanly). Never overwrite real LLM scores.
     rows = conn.execute(
-        "SELECT url, title, location FROM jobs "
+        "SELECT url, title, location, full_description FROM jobs "
         "WHERE fit_score IS NULL OR score_reasoning LIKE 'PREFILTERED%'"
     ).fetchall()
 
     kept, dropped = [], []
     reason_counts: Counter = Counter()
     for r in rows:
-        reasons = evaluate(r["title"] or "", r["location"])
+        reasons = evaluate(r["title"] or "", r["location"], r["full_description"])
         if reasons:
             dropped.append((r["url"], reasons))
             for x in reasons:
