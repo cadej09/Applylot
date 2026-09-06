@@ -674,11 +674,25 @@ def _fallback_providers(primary_url: str) -> list[tuple[str, str, str]]:
             ))
 
     primary_root = primary_url.rstrip("/")
-    # Emit (url, model, key, is_paid). The flag survives the primary-dedup
-    # filter below, which can shift indices, so it is attached per-entry rather
-    # than returned as a boundary index.
+    # Emit (url, model, key, is_paid). The flag survives the dedup filter below,
+    # which can shift indices, so it is attached per-entry rather than returned
+    # as a boundary index.
     tagged = [(u, m, k, i >= _paid_from) for i, (u, m, k) in enumerate(provs)]
-    return [p for p in tagged if p[0].rstrip("/") != primary_root]
+
+    # Drop only the entry that IS the primary — matched on host AND key.
+    #
+    # This used to filter on host alone, which silently deleted every other
+    # account on that host: pointing LLM_URL at NIM removed NVIDIA_API_KEY_2 and
+    # _3 from the chain entirely, so one rate-limited key fell straight through
+    # to the dead providers below instead of to its own siblings. Cost a full
+    # backlog-scoring run on 2026-09-05 (61 of 2,413 jobs) while two healthy NIM
+    # keys sat unused. Multi-key accounts are the whole point of _keys().
+    primary_key = (os.environ.get("LLM_API_KEY") or "").strip()
+    return [
+        p for p in tagged
+        if not (p[0].rstrip("/") == primary_root
+                and (not primary_key or p[2] == primary_key))
+    ]
 
 
 class FallbackLLM:
