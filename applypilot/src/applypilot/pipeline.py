@@ -61,7 +61,24 @@ _UPSTREAM: dict[str, str | None] = {
 
 def _run_discover(workers: int = 1) -> dict:
     """Stage: Job discovery — JobSpy, Workday, and smart-extract scrapers."""
-    stats: dict = {"jobspy": None, "workday": None, "boards": None, "smartextract": None}
+    stats: dict = {"jobspy": None, "workday": None, "boards": None,
+                   "earlycareerradar": None, "smartextract": None}
+
+    # EarlyCareerRadar — internships and new-grad roles aggregated from
+    # employers' OWN career sites (2026-09-10). Runs first because it is one
+    # cheap request per page and covers the gap the others cannot: 35 of 42
+    # target employers, Microsoft included, have no Workday board, so they only
+    # reach the pipeline if they cross-post to LinkedIn/Indeed. Reads only the
+    # public pages robots.txt allows; never /api/.
+    console.print("  [cyan]EarlyCareerRadar (internships + new grad)...[/cyan]")
+    try:
+        from applypilot.database import get_connection
+        from applypilot.discovery.earlycareerradar import run_discovery as _ecr
+        stats["earlycareerradar"] = f"{_ecr(get_connection())} new"
+    except Exception as e:
+        log.error("EarlyCareerRadar failed: %s", e)
+        console.print(f"  [red]EarlyCareerRadar error:[/red] {e}")
+        stats["earlycareerradar"] = f"error: {e}"
 
     # JobSpy
     console.print("  [cyan]JobSpy full crawl...[/cyan]")

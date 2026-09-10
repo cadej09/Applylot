@@ -189,6 +189,16 @@ _ALL_COLUMNS: dict[str, str] = {
     "dupe_sig": "TEXT",
     # Normalised employer key for duplicate comparison. See company_key().
     "company_key": "TEXT",
+    # Application deadline, ISO-8601, when a source publishes one (2026-09-10).
+    # Only earlycareerradar supplies this today. It exists because a Microsoft
+    # Data Science internship closed while queued and nothing in the pipeline
+    # knew it was about to: score and freshness say how GOOD a job is, never how
+    # LITTLE TIME is left. NULL means "no deadline known", not "no deadline".
+    "deadline_at": "TEXT",
+    # TRUE posting date from the source, where one is published (2026-09-10).
+    # discovered_at only records when WE first saw a job, so a posting already
+    # nine days old looked brand new. Only earlycareerradar supplies this today.
+    "posted_at": "TEXT",
 }
 
 
