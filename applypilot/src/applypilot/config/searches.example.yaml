@@ -104,8 +104,13 @@ exclude_titles:
   - "VP "
   - "vice president"
   - "chief"
-  - "intern"
-  - "internship"
+  # "intern"/"internship" removed 2026-09-10. exclude_titles is applied at
+  # DISCOVERY time (jobspy.py, boards.py), so these entries silently discarded
+  # every internship from LinkedIn/Indeed/Google before it reached the DB --
+  # only workday.py, which ignores this list, let any through. That is why a
+  # Microsoft Data Science internship posted 2026-09-01 was never scraped.
+  # Internships are ordinary jobs since 2026-08-28 (UPenn MSE enrollment);
+  # junk ones are rejected downstream by prefilter's role gate instead.
   - "co-op"
   - "clearance required"
   - "TS/SCI"

@@ -72,13 +72,24 @@ INTERN_ALWAYS_EXCLUDE = (
     r"stagiaire", r"stajyer", r"praktik", r"werkstudent",
     r"\btrainer\b", r"volunteer",
 )
-# Real US internship/entry-pipeline titles. Excluded by default; included when
-# INCLUDE_INTERNSHIPS=1 (user is pursuing a Master's, 2026-07-30). Kept separate
-# from the list above so enabling internships cannot also let gig work back in.
+# Real US internship/entry-pipeline titles.
+#
+# DEFAULT FLIPPED TO INCLUDED, 2026-09-10 (user: "internship scraping can be
+# done simultaneously and from same sources as the regular job searching
+# pipeline. Since I am most likely eligible for internships now with my MSE AI
+# admission acceptance"). Internships are ordinary jobs now — the same sources,
+# the same gates, the same apply path — so nothing should have to opt in.
+#
+# The old default of "0" meant any caller that forgot INCLUDE_INTERNSHIPS=1
+# silently reinstated the block; only run-cycle.ps1 set it. Set
+# INCLUDE_INTERNSHIPS=0 explicitly to restore the old exclusion.
+#
+# Kept as a separate tuple from INTERN_ALWAYS_EXCLUDE so that including
+# internships can never also let volunteer/AI-trainer gig work back in.
 INTERN_ROLE_TITLES = (
     r"\bintern\b", r"internship", r"co-?op\b", r"apprentice", r"\btrainee\b",
 )
-INCLUDE_INTERNSHIPS = os.environ.get("INCLUDE_INTERNSHIPS", "0") == "1"
+INCLUDE_INTERNSHIPS = os.environ.get("INCLUDE_INTERNSHIPS", "1") == "1"
 INTERN_EXCLUDE = (
     INTERN_ALWAYS_EXCLUDE if INCLUDE_INTERNSHIPS
     else INTERN_ALWAYS_EXCLUDE + INTERN_ROLE_TITLES
